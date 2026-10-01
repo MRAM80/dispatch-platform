@@ -39,17 +39,22 @@ app/
   dashboard  dispatch  order  driver(+/pretrip)      ← operations
   sale  invoices  expenses  receiving  reports(+/statements,/performance,/tax)
   export  prices  import  inventory                  ← business / accounting
-  customers  bins  drivers  dump-sites  users  settings  admin  loads
+  customers  bins  drivers  dump-sites  users  settings  setup
   api/push/*  api/admin/create-user
 components/
   AppShell.tsx      ← the frame every admin page renders inside
   Icon.tsx          ← the only icon source (19 outline glyphs)
   Till.tsx          ← the counter till (Quick Sale)
+  SettingsProvider.tsx ← per-client module switches (useModules)
   AppLogo  ThemeToggle  ThemeWatcher
-  NewOrderModal.tsx ← ⚠ DEAD CODE, see "Known defects"
-  dashboard-shell.tsx  Navbar.tsx  ← legacy, see "Known defects"
+db/
+  migrations/       ← the whole schema, in dependency order
+  expected-schema.json  README.md
+scripts/
+  migrate.mjs  doctor.mjs  lib/admin.mjs   ← npm run db:migrate / db:doctor
 lib/
   client-config.ts  ← every tenant knob
+  settings.ts       ← module definitions and their dependencies
   invoice-print.ts  ← the shared customer-facing print document
   supabase/client.ts  supabase/server.ts  roles.ts  push.ts
 hooks/useRole.ts
@@ -182,7 +187,7 @@ const BULK_UNITS = ['yard','yards','yd','cubic yard','tonne','ton','load','m3','
 
 Block checkout on a fractional countable line:
 `"<description> is sold by the <unit> — use a whole number."`
-⚠ This list is duplicated in `Till.tsx`, `order/page.tsx`, `NewOrderModal.tsx` and (shorter)
+⚠ This list is duplicated in `Till.tsx`, `order/page.tsx` and (shorter)
 `prices/page.tsx`. Adding a unit means editing all four.
 
 ### Orders
@@ -296,8 +301,9 @@ which no-ops when `role` is null. No data leaks, but the app looks logged in whe
 ⚠ `user_profiles` is keyed by **`user_id`**, not `auth_user_id`, and has **no `full_name`** column
 (verified against the live BR project 2026-08-01 with a control test). `drivers.auth_user_id` does exist.
 
-`workflow_step` in practice takes **four** values: `MAIN` (new orders), `DUMP`, `RETURN`, and `PICKUP`
-(only ever written by the dead `NewOrderModal`). The driver app treats `MAIN`, `PICKUP` and null identically.
+`workflow_step` takes **three** values in live code: `MAIN` (new orders), `DUMP` and `RETURN`.
+`PICKUP` is historical — only the deleted `NewOrderModal` ever wrote it — but existing rows may
+still carry it, and the driver app treats `MAIN`, `PICKUP` and null identically, so don't "clean it up".
 
 ---
 
@@ -322,10 +328,16 @@ Invoice Report with the three-tier delivery lookup · AppShell + tenant theming 
 - **Emoji→Icon migration** — admin pages are clean; the driver PWA still uses ~23 emoji.
 
 ### Stubbed / dead
-`app/driver/pretrip/page.tsx` (writes nothing, redirects to a nonexistent route) ·
-`components/NewOrderModal.tsx` · `components/Navbar.tsx` ·
-`components/dashboard-shell.tsx` (legacy lucide shell, still used by `/loads` and `/admin`) ·
+`app/driver/pretrip/page.tsx` — half-built, not legacy: it writes nothing
+(`// TODO: Replace with your Supabase insert`) and redirects to `/driver-route`, which does not
+exist, but a `pre_trip_inspections` table exists so it was intended. Nothing links to it. ·
 `Till mode="services"` · the Dashboard "Customer Report" modal · oversell prevention (none — stock goes negative).
+
+**Deleted 2026-10-01** (superseded, zero importers, and they queried `jobs` / `loads` / `profiles`
+which no migration creates — so they broke every new client): `app/loads/`, `app/admin/`,
+`components/dashboard-shell.tsx`, `components/Navbar.tsx`, `components/NewOrderModal.tsx`.
+The `loads` table does not exist even on SimpliiTrash, so `/loads` had been failing for some time.
+`lucide-react` stays — `app/reset-password/page.tsx` still uses it.
 
 ---
 
@@ -341,9 +353,10 @@ the rest come from the audit pass and are worth re-checking before acting on the
    `bin_type` are written `null` for that type (the form hides both selects), and the save is gated on
    at least one material line: *"A material delivery needs at least one material line."*
    The driver stop bar no longer renders a `— yd` chip when `bin_size` is null.
-2. **`components/NewOrderModal.tsx` is dead code** — zero importers. Dispatch replaced it with
-   `<iframe src="/order?newOrder=1&embedded=1">` + `postMessage`. The old CLAUDE.md rule
-   ("always use NewOrderModal") and the `/parity` and `/check` skills are stale.
+2. ~~**`components/NewOrderModal.tsx` is dead code.**~~ **Deleted 2026-10-01**, along with
+   `/loads`, `/admin`, `dashboard-shell` and `Navbar`. `app/order/page.tsx` is now the only create
+   form; dispatch opens it at `/order?newOrder=1&embedded=1` and talks to it via `postMessage`.
+   The `/parity` skill was removed with it and `/check` was rewritten.
 3. ~~**The create modal leaks material between orders.**~~ **Fixed 2026-08-01.** One `resetLineState()`
    clears `orderLines` / `originalLines` / `lineSearch` / `prepaid`, and `openCreateModal`,
    `openEditModal` and `closeModal` all call it. `openCreateModal` also resets `newAddrDetails`, which
@@ -408,8 +421,12 @@ the rest come from the audit pass and are worth re-checking before acting on the
 
 ## Skills
 
-`/check` · `/db-check` · `/driver-check` · `/parity` · `/sql` · `/br-sync` — note `/parity` and
-`/check` still assert the stale `NewOrderModal` and `workflow_step: 'PICKUP'` rules (defect 2).
+`/check` · `/db-check` · `/driver-check` · `/sql` · `/br-sync`
+
+`/parity` was deleted with `NewOrderModal` (it compared the two create forms; there is only one
+now), and `/check` was rewritten — its form-parity and `workflow_step: 'PICKUP'` assertions were
+both stale. It now checks the single-create-form contract, module gating, and schema parity via
+`npm run db:doctor`.
 
 ---
 

@@ -35,15 +35,6 @@ type DumpSite = {
   address: string | null
 }
 
-type Bin = {
-  id: string
-  bin_number: string | null
-  bin_size: string | null
-  bin_type: string | null
-  status: string | null
-  location: string | null
-}
-
 type Order = {
   id: string
   ticket_number: string | null
@@ -334,7 +325,6 @@ export default function DispatchBoardPage() {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [jobSites, setJobSites] = useState<JobSite[]>([])
-  const [bins, setBins] = useState<Bin[]>([])
   const [dumpSites, setDumpSites] = useState<DumpSite[]>([])
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState('')
@@ -436,14 +426,6 @@ export default function DispatchBoardPage() {
     setJobSites((data as JobSite[]) || [])
   }
 
-  async function loadBins() {
-    const { data } = await supabase
-      .from('bins')
-      .select('id,bin_number,bin_size,bin_type,status,location')
-      .order('bin_number', { ascending: true })
-    setBins((data as Bin[]) || [])
-  }
-
   async function loadDumpSites() {
     const { data } = await supabase
       .from('dump_sites')
@@ -500,7 +482,7 @@ export default function DispatchBoardPage() {
   async function refreshAll() {
     setPageError('')
     const [driverList, orderList] = await Promise.all([loadDrivers(), loadOrders()])
-    await Promise.all([loadCustomers(), loadJobSites(), loadBins(), loadDumpSites(), loadRecentCompleted()])
+    await Promise.all([loadCustomers(), loadJobSites(), loadDumpSites(), loadRecentCompleted()])
     await reconcileDriverStatuses(driverList, orderList)
   }
 
@@ -524,9 +506,6 @@ export default function DispatchBoardPage() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_sites' }, async () => {
         await loadJobSites()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bins' }, async () => {
-        await loadBins()
       })
       .subscribe()
 

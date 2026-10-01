@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CLIENT_CONFIG } from '@/lib/client-config'
+import { useModules } from '@/components/SettingsProvider'
 
 type Driver = {
   id: string
@@ -285,6 +286,7 @@ function hasOpenPreviousOrder(currentOrder: Order, allOrders: Order[]) {
 export default function DriverPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { modules } = useModules()
 
   const [driver, setDriver] = useState<Driver | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
@@ -1226,7 +1228,7 @@ export default function DriverPage() {
       return
     }
 
-    const requiresDriverBin = CLIENT_CONFIG.requireBin && (order.order_type === 'DELIVERY' || order.order_type === 'EXCHANGE')
+    const requiresDriverBin = modules.binNumbers && (order.order_type === 'DELIVERY' || order.order_type === 'EXCHANGE')
     const currentBinRelation =
       firstRelation(order.bins) || (order.bin_id ? binsMap[String(order.bin_id)] : null)
 
@@ -1574,7 +1576,7 @@ export default function DriverPage() {
                 : assignedBin?.bin_number || order.bin_number || binInputs[order.id] || ''
               const photoState = photoUploadStates[order.id]
               const commentState = commentSaveStates[order.id]
-              const binBlocked = CLIENT_CONFIG.requireBin && needsNewBin && !assignedBin?.bin_number
+              const binBlocked = modules.binNumbers && needsNewBin && !assignedBin?.bin_number
 
               // Step-aware derived values
               const isDumpStep = order.workflow_step === 'DUMP'

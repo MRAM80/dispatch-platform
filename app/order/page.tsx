@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import Icon from '@/components/Icon'
 import { CLIENT_CONFIG } from '@/lib/client-config'
+import { useModules } from '@/components/SettingsProvider'
+import { enabledOrderTypes } from '@/lib/settings'
 
 type Driver = {
   id: string
@@ -340,6 +342,7 @@ function ReadOnlyField({
 function OrdersPageContent() {
   const supabase = createClient()
   const router = useRouter()
+  const { modules } = useModules()
   const searchParams = useSearchParams()
 
   const isEmbedded = searchParams.get('embedded') === '1'
@@ -641,6 +644,28 @@ function OrdersPageContent() {
   }, [materialItems, lineSearch])
 
   const isMaterialOrder = form.order_type === 'MATERIAL DELIVERY'
+
+  /** Job types this client has switched on. */
+  const creatableTypes = useMemo(() => enabledOrderTypes(modules), [modules])
+
+  /**
+   * The form dropdown also offers whatever the order being edited already is,
+   * even if that type has since been switched off — otherwise opening an old
+   * exchange would silently rewrite it to the first option in the list.
+   */
+  const formOrderTypes = useMemo(() => {
+    const allowed = new Set<string>(creatableTypes)
+    if (editingOrder?.order_type) allowed.add(editingOrder.order_type)
+    return ORDER_TYPES.filter(t => allowed.has(t))
+  }, [creatableTypes, editingOrder])
+
+  /** The list filter keeps any type present in the data, so old work stays findable. */
+  const filterOrderTypes = useMemo(() => {
+    const present = new Set<string>(creatableTypes)
+    orders.forEach(o => { if (o.order_type) present.add(o.order_type) })
+    return ORDER_TYPES.filter(t => present.has(t))
+  }, [creatableTypes, orders])
+
   const linesTotal = useMemo(() => orderLines.reduce((s, l) => s + l.quantity * l.rate, 0), [orderLines])
   const hasMaterialLine = orderLines.some(l => l.kind === 'product')
   const deliveryOnOrder = orderLines.some(l => l.priceItemId === deliveryCharge?.id)
@@ -1069,6 +1094,11 @@ function OrdersPageContent() {
     setEditingOrder(null)
     setForm({
       ...emptyForm,
+      // emptyForm assumes DELIVERY; a client without bin services starts
+      // on whatever job type they actually have.
+      order_type: creatableTypes.includes(emptyForm.order_type)
+        ? emptyForm.order_type
+        : creatableTypes[0] || emptyForm.order_type,
       scheduled_date: generateQuickDate(0),
     })
     resetLineState()
@@ -1460,7 +1490,7 @@ function OrdersPageContent() {
     }
 
     if (orderType === 'EXCHANGE') {
-      if (CLIENT_CONFIG.requireBin && !form.old_bin_id) throw new Error('Exchange requires the current bin from this Job Site.')
+      if (modules.binNumbers && !form.old_bin_id) throw new Error('Exchange requires the current bin from this Job Site.')
 
       if (isEditing && form.bin_id) {
         const selectedBin = await validateSelectedAvailableBin(form.bin_id, form.bin_size, form.old_bin_id)
@@ -1479,7 +1509,7 @@ function OrdersPageContent() {
     }
 
     if (orderType === 'REMOVAL') {
-      if (CLIENT_CONFIG.requireBin && !form.old_bin_id) throw new Error('Removal requires the current bin from this Job Site.')
+      if (modules.binNumbers && !form.old_bin_id) throw new Error('Removal requires the current bin from this Job Site.')
 
       return {
         payload: { ...basePayload, bin_id: null, old_bin_id: form.old_bin_id || null },
@@ -1490,7 +1520,7 @@ function OrdersPageContent() {
 
     if (orderType === 'DUMP RETURN') {
       const sameBinId = form.old_bin_id || editingOrder?.bin_id || null
-      if (CLIENT_CONFIG.requireBin && !sameBinId) throw new Error('Dump return requires the existing bin from this Job Site.')
+      if (modules.binNumbers && !sameBinId) throw new Error('Dump return requires the existing bin from this Job Site.')
 
       return {
         payload: { ...basePayload, bin_id: sameBinId, old_bin_id: sameBinId },
@@ -2058,7 +2088,7 @@ function OrdersPageContent() {
               className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400"
             >
               <option value="all">All Order Types</option>
-              {ORDER_TYPES.map((type) => (
+              {filterOrderTypes.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
@@ -2376,7 +2406,7 @@ function OrdersPageContent() {
                         }
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400"
                       >
-                        {ORDER_TYPES.map((type) => (
+                        {formOrderTypes.map((type) => (
                           <option key={type} value={type}>
                             {type}
                           </option>
@@ -2613,7 +2643,7 @@ function OrdersPageContent() {
                   </div>
                 )}
 
-                {!isReadOnlyModal && (
+                {!isReadOnlyModal && modules.materialDelivery && (
                   <>
                 {/* ── Material on this order ─────────────────────────── */}
                 <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">

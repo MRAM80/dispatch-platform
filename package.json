@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:doctor": "node scripts/doctor.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

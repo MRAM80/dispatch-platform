@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
+import { CLIENT_CONFIG } from '@/lib/client-config'
 
 type TestBody = {
   driverId: string
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
     const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
-    const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:admin@simpliidash.ca'
+    const vapidSubject = CLIENT_CONFIG.vapidSubject
 
     if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey) {
       return NextResponse.json({ error: 'Missing push environment variables.' }, { status: 500 })
@@ -43,9 +44,10 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = JSON.stringify({
-      title: `${process.env.NEXT_PUBLIC_CLIENT_NAME || 'SimpliiTrash'} Driver`,
+      title: `${CLIENT_CONFIG.name} Driver`,
       body: 'This is a test notification.',
       url: '/driver',
+      icon: CLIENT_CONFIG.icon192,
     })
 
     const results = await Promise.allSettled(

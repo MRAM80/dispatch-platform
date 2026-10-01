@@ -1359,7 +1359,7 @@ export default function DriverPage() {
     const newOrderIds = currentIds.filter((id) => !previousIds.includes(id))
     if (previousIds.length > 0 && newOrderIds.length > 0) {
       notifyInApp(
-        'SimpliiTrash',
+        CLIENT_CONFIG.name,
         newOrderIds.length === 1 ? 'You received a new order' : `You received ${newOrderIds.length} new orders`
       )
     }

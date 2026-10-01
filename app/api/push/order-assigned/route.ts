@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as webpush from 'web-push'
+import { CLIENT_CONFIG } from '@/lib/client-config'
 
 type AssignNotificationBody = {
   driverId?: string
@@ -29,8 +30,7 @@ export async function POST(request: NextRequest) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
     const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
-    const vapidSubject =
-      process.env.VAPID_SUBJECT || 'mailto:admin@simpliidash.ca'
+    const vapidSubject = CLIENT_CONFIG.vapidSubject
 
     if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey) {
       return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       title: 'New Order Assigned',
       body: `${customerName} • ${address}`,
       url: '/driver',
+      icon: CLIENT_CONFIG.icon192,
       orderId,
     })
 

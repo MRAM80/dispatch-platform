@@ -1,10 +1,12 @@
-const CACHE_NAME = 'simpliidash-driver-v3'
-const APP_SHELL = [
-  '/driver',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-]
+// This file is static and cannot read the tenant config, so nothing in it may
+// name a client. Caches are scoped per origin and every tenant is its own
+// domain, so a plain name is already unique.
+const CACHE_NAME = 'driver-v4'
+
+// Icons are deliberately NOT precached: their filenames depend on the tenant's
+// NEXT_PUBLIC_CLIENT_ICON_PREFIX, and addAll() rejects the whole install if any
+// single entry 404s. They are picked up by the cache-first handler below.
+const APP_SHELL = ['/driver', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -85,20 +87,22 @@ self.addEventListener('push', (event) => {
     data = event.data ? event.data.json() : {}
   } catch {
     data = {
-      title: 'SimpliiTrash Driver',
       body: event.data ? event.data.text() : 'You have a new update.',
     }
   }
 
-  const title = data.title || 'SimpliiTrash Driver'
+  // The server always sends a branded title and the tenant's icon; these
+  // fallbacks exist only for a malformed payload and must stay generic.
+  const title = data.title || 'Driver'
   const body = data.body || 'You have a new update.'
   const url = data.url || '/driver'
+  const icon = data.icon || '/icons/icon-192.png'
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon,
+      badge: icon,
       data: { url },
     })
   )

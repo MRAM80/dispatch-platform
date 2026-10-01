@@ -1,10 +1,13 @@
 import * as webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
+import { CLIENT_CONFIG } from '@/lib/client-config'
 
 export type PushPayload = {
   title: string
   body: string
   url?: string
+  /** Tenant icon. Omitted callers get it filled in by sendPushToDriver. */
+  icon?: string
 }
 
 export async function sendPushToDriver(driverId: string, payload: PushPayload) {
@@ -12,7 +15,7 @@ export async function sendPushToDriver(driverId: string, payload: PushPayload) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
-  const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:admin@simpliidash.ca'
+  const vapidSubject = CLIENT_CONFIG.vapidSubject
 
   if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey) {
     throw new Error('Missing push environment variables.')
@@ -34,7 +37,11 @@ export async function sendPushToDriver(driverId: string, payload: PushPayload) {
     subscriptions.map((sub) =>
       webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        JSON.stringify({ ...payload, url: payload.url || '/driver' })
+        JSON.stringify({
+          ...payload,
+          url: payload.url || '/driver',
+          icon: payload.icon || CLIENT_CONFIG.icon192,
+        })
       )
     )
   )

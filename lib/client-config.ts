@@ -24,7 +24,10 @@ export const CLIENT_CONFIG = {
   themeStorageKey: `${shortName.toLowerCase()}-theme`,
   swCacheName: `${shortName.toLowerCase()}-driver-v2`,
   emailPlaceholder: process.env.NEXT_PUBLIC_CLIENT_EMAIL_PLACEHOLDER || `you@${name.toLowerCase().replace(/\s+/g, '')}.com`,
-  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@simpliidash.ca',
+  // Contact URI the push services see. Derived per tenant so no client's
+  // address is ever baked in as another client's default.
+  vapidSubject:
+    process.env.VAPID_SUBJECT || `mailto:admin@${name.toLowerCase().replace(/\s+/g, '')}.com`,
   icon192: `/icons/${iconPrefix}-192.png`,
   icon512: `/icons/${iconPrefix}-512.png`,
 }

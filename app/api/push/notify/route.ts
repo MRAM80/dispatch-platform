@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPushToDriver } from '@/lib/push'
+import { CLIENT_CONFIG } from '@/lib/client-config'
 
 type NotifyBody = {
   driverId?: string
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing driverId or event.' }, { status: 400 })
     }
 
-    let title = process.env.NEXT_PUBLIC_CLIENT_NAME || 'SimpliiTrash'
+    let title = CLIENT_CONFIG.name
     let bodyText = ''
 
     const customer = customerName || 'Order'

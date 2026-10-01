@@ -112,6 +112,31 @@ export async function fetchSchema({ url, serviceKey }) {
   return { schema, rpcs }
 }
 
+/**
+ * Read a value out of .env.local without pulling in a dotenv dependency.
+ *
+ * Lets secrets stay in a gitignored file instead of on a command line, where
+ * they would land in shell history and be visible to every local process.
+ */
+export async function fromEnvFile(name) {
+  const { readFile } = await import('node:fs/promises')
+  const { join, dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  try {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const text = await readFile(join(here, '..', '..', '.env.local'), 'utf8')
+    const line = text.split('\n').find(l => l.startsWith(`${name}=`))
+    if (!line) return null
+    let v = line.slice(name.length + 1).trim()
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1)
+    }
+    return v || null
+  } catch {
+    return null
+  }
+}
+
 /** Read `--flag value`, `--flag=value` and bare `--flag` off argv. */
 export function parseArgs(argv) {
   const out = { _: [] }

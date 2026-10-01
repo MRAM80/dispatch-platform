@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AdminError, colour, parseArgs, refFromUrl, requireValue, runSql } from './lib/admin.mjs'
+import { AdminError, colour, fromEnvFile, parseArgs, refFromUrl, requireValue, runSql } from './lib/admin.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MIGRATIONS_DIR = join(HERE, '..', 'db', 'migrations')
@@ -92,7 +92,10 @@ Reads SUPABASE_URL and SUPABASE_ACCESS_TOKEN from the environment.`)
   }
 
   const url = requireValue(args, 'url', process.env.SUPABASE_URL, { what: 'the project URL' })
-  const token = args.token || process.env.SUPABASE_ACCESS_TOKEN
+  // .env.local last, so the secret can live in a gitignored file rather than
+  // on the command line.
+  const token =
+    args.token || process.env.SUPABASE_ACCESS_TOKEN || (await fromEnvFile('SUPABASE_ACCESS_TOKEN'))
   const ref = refFromUrl(url)
   const migrations = await loadMigrations()
 

@@ -84,6 +84,31 @@ never read `process.env` inside a component.**
 ⚠ `.env.local.example` is **stale** — it omits `REQUIRE_BIN`, `TAX_LABEL`, `TAX_RATE`, `YARD_ADDRESS`,
 `ICON_URL` and `GOOGLE_MAPS_API_KEY`. Use the table above as the source of truth.
 
+⚠ `NEXT_PUBLIC_CLIENT_NAME` is **not set** in `.env.local` — SimpliiTrash is named purely by the
+`'SimpliiTrash'` default on line 1 of `lib/client-config.ts`. For a product that default should be
+neutral and every client set explicitly, but flipping it requires setting the var on the Vercel
+deploy first or production renames itself.
+
+### Two layers of configuration
+
+| Layer | Lives in | Changing it | Examples |
+|---|---|---|---|
+| **Deployment** | env vars → `CLIENT_CONFIG` | needs a redeploy | Supabase URL/keys, VAPID keys, branding |
+| **Client setup** | `app_settings` table → `useModules()` | a toggle on `/setup` | which modules are on |
+
+`CLIENT_CONFIG` is a *synchronous* import used in ~120 places, so DB-backed values must NOT be moved
+into it. Read client setup with `useModules()` from `components/SettingsProvider.tsx` instead; it
+caches to `localStorage` so the sidebar renders without waiting on the network.
+
+**Module rules** (`lib/settings.ts`):
+- A switch controls what is **offered from now on**. It never hides or deletes existing work — an
+  order created while Disposal Sites was on must keep loading, printing and billing after it's off.
+- Dependencies live in `resolveModules()` and `enabledOrderTypes()` — never re-derive them at a call
+  site. Disposal Sites off ⇒ EXCHANGE / REMOVAL / DUMP RETURN unavailable, because all three require
+  a dump site.
+- Defaults are "everything on", with `binNumbers` inheriting `CLIENT_CONFIG.requireBin`, so an
+  un-migrated deployment behaves exactly as it did before this feature existed.
+
 ---
 
 ## The core architecture: the order is the spine
@@ -534,6 +559,50 @@ alter table invoices add column if not exists paid_at date;
 
 -- Stock movements can be caused by an order, not just a counter invoice
 alter table stock_movements add column if not exists order_id uuid references "order"(id) on delete set null;
+```
+
+`app_settings` (added 2026-10-01 — **System Setup**, the per-client module switches behind
+`/setup`). This is what turns two bespoke builds into one product: a client's shape lives in their
+own database and changes without a redeploy. The app falls back to `DEFAULT_MODULES` when the table
+or row is absent, so it can be run at any time, before or after deploying.
+
+```sql
+-- One row only; the boolean primary key with check(id) enforces it.
+create table if not exists app_settings (
+  id boolean primary key default true check (id),
+  modules jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by uuid
+);
+
+alter table app_settings enable row level security;
+drop policy if exists "app_settings_select" on app_settings;
+drop policy if exists "app_settings_insert" on app_settings;
+drop policy if exists "app_settings_update" on app_settings;
+drop policy if exists "app_settings_delete" on app_settings;
+
+-- Everyone signed in must read it: the sidebar is built from it.
+create policy "app_settings_select" on app_settings
+  for select to authenticated using (true);
+
+-- Only owner/manager may reshape the app. Note this is the first table in the
+-- project whose policy is role-aware rather than `using (true)`.
+create policy "app_settings_insert" on app_settings
+  for insert to authenticated with check (
+    exists (select 1 from user_profiles up
+            where up.user_id = auth.uid() and up.role in ('owner','manager'))
+  );
+
+create policy "app_settings_update" on app_settings
+  for update to authenticated using (
+    exists (select 1 from user_profiles up
+            where up.user_id = auth.uid() and up.role in ('owner','manager'))
+  ) with check (
+    exists (select 1 from user_profiles up
+            where up.user_id = auth.uid() and up.role in ('owner','manager'))
+  );
+
+-- Deliberately no delete policy: the setup row is never removed.
 ```
 
 Retail inventory (added 2026-07-29 — stock lives on `price_book` products; `adjust_stock` is a function so concurrent tills can't clobber each other's read-modify-write):

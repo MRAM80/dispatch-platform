@@ -30,6 +30,12 @@ type Section = {
 
 const sections: Section[] = [
   {
+    href: '/setup',
+    title: 'System Setup',
+    description: 'Choose which parts of the system you use — bins, material, counter sales, accounting.',
+    icon: 'settings',
+  },
+  {
     href: '/drivers',
     title: 'Drivers & Fleet',
     description: 'Drivers, trucks, assignments, and dispatch readiness.',

@@ -2,6 +2,7 @@ import './globals.css'
 import type { ReactNode } from 'react'
 import { CLIENT_CONFIG } from '@/lib/client-config'
 import ThemeWatcher from '@/components/ThemeWatcher'
+import SettingsProvider from '@/components/SettingsProvider'
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const key = CLIENT_CONFIG.themeStorageKey
@@ -37,7 +38,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         }}
       >
         <ThemeWatcher />
-        {children}
+        <SettingsProvider>{children}</SettingsProvider>
       </body>
     </html>
   )

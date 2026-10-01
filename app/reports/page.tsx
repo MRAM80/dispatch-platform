@@ -10,6 +10,8 @@ import Icon, { type IconName } from '@/components/Icon'
 import { CLIENT_CONFIG } from '@/lib/client-config'
 import { useRole } from '@/hooks/useRole'
 import { can } from '@/lib/roles'
+import { useModules } from '@/components/SettingsProvider'
+import { isRouteEnabled } from '@/lib/settings'
 
 const CARDS: { href: string; title: string; description: string; icon: IconName }[] = [
   {
@@ -35,6 +37,7 @@ const CARDS: { href: string; title: string; description: string; icon: IconName 
 export default function ReportsPage() {
   const router = useRouter()
   const { role, loading: roleLoading } = useRole()
+  const { modules } = useModules()
 
   useEffect(() => {
     if (!roleLoading && role !== null && !can(role, 'canViewReports')) {
@@ -49,7 +52,7 @@ export default function ReportsPage() {
       maxWidth="max-w-5xl"
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        {CARDS.map(card => (
+        {CARDS.filter(card => isRouteEnabled(card.href, modules)).map(card => (
           <Link
             key={card.href}
             href={card.href}

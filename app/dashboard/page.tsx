@@ -9,6 +9,17 @@ import AppShell from '@/components/AppShell'
 import Icon from '@/components/Icon'
 import { useRole } from '@/hooks/useRole'
 import { can } from '@/lib/roles'
+import { useModules } from '@/components/SettingsProvider'
+import { enabledOrderTypes } from '@/lib/settings'
+
+/** Dot colour per order type in the mix tiles. */
+const ORDER_TYPE_DOTS: Record<string, string> = {
+  'DELIVERY': '#059669',
+  'EXCHANGE': '#d97706',
+  'REMOVAL': '#e11d48',
+  'DUMP RETURN': '#0284c7',
+  'MATERIAL DELIVERY': '#7c3aed',
+}
 
 type Order = {
   id: string
@@ -118,6 +129,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   const { role, loading: roleLoading } = useRole()
+  const { modules } = useModules()
 
   useEffect(() => {
     if (!roleLoading && role !== null && !can(role, 'canViewDashboard')) {
@@ -344,13 +356,16 @@ export default function DashboardPage() {
     return [...orders].slice(0, 8)
   }, [orders])
 
-  const orderTypeSummary = useMemo(() => {
-    return {
-      delivery: orders.filter((o) => (o.order_type || 'DELIVERY') === 'DELIVERY').length,
-      exchange: orders.filter((o) => o.order_type === 'EXCHANGE').length,
-      removal: orders.filter((o) => o.order_type === 'REMOVAL').length,
-      dumpReturn: orders.filter((o) => o.order_type === 'DUMP RETURN').length,
+  // Counted by order type so the mix follows whatever this client switched on,
+  // rather than always showing the four bin-service types.
+  const orderTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const o of orders) {
+      // A row with no type is a legacy delivery.
+      const key = o.order_type || 'DELIVERY'
+      counts[key] = (counts[key] || 0) + 1
     }
+    return counts
   }, [orders])
 
   return (
@@ -404,18 +419,15 @@ export default function DashboardPage() {
         {/* Order mix */}
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Order Mix</h2>
         <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            { label: 'Delivery', value: orderTypeSummary.delivery, dot: '#059669' },
-            { label: 'Exchange', value: orderTypeSummary.exchange, dot: '#d97706' },
-            { label: 'Removal', value: orderTypeSummary.removal, dot: '#e11d48' },
-            { label: 'Dump Return', value: orderTypeSummary.dumpReturn, dot: '#0284c7' },
-          ].map(t => (
-            <div key={t.label} className="rounded-xl bg-white px-5 py-4 ring-1 ring-slate-200">
+          {enabledOrderTypes(modules).map(t => (
+            <div key={t} className="rounded-xl bg-white px-5 py-4 ring-1 ring-slate-200">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ background: t.dot }} />
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{t.label}</span>
+                <span className="h-2 w-2 rounded-full" style={{ background: ORDER_TYPE_DOTS[t] || '#64748b' }} />
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{t}</span>
               </div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{t.value}</div>
+              <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+                {orderTypeCounts[t] || 0}
+              </div>
             </div>
           ))}
         </div>

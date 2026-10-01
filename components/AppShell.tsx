@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import AppLogo from '@/components/AppLogo'
 import Icon, { type IconName } from '@/components/Icon'
 import { CLIENT_CONFIG } from '@/lib/client-config'
+import { useModules } from '@/components/SettingsProvider'
+import { isRouteEnabled } from '@/lib/settings'
 
 type NavItem = { href: string; label: string; icon: IconName }
 type NavGroup = { label: string; items: NavItem[] }
@@ -89,8 +91,17 @@ export default function AppShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { modules } = useModules()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
+
+  // Only the modules this client switched on. A hidden route is still
+  // reachable by URL on purpose — switching a module off must never strand
+  // the history recorded while it was on.
+  const nav = NAV.map(group => ({
+    ...group,
+    items: group.items.filter(item => isRouteEnabled(item.href, modules)),
+  })).filter(group => group.items.length > 0)
 
   // Close the mobile drawer whenever navigation happens
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -118,7 +129,7 @@ export default function AppShell({
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-6">
-        {NAV.map((group, gi) => (
+        {nav.map((group, gi) => (
           <div key={group.label} className={gi > 0 ? 'mt-6 border-t border-white/8 pt-5' : ''}>
             <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-white/35">
               {group.label}

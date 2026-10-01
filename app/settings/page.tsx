@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import Icon, { type IconName } from '@/components/Icon'
 import { CLIENT_CONFIG } from '@/lib/client-config'
+import { useModules } from '@/components/SettingsProvider'
+import { isRouteEnabled } from '@/lib/settings'
 
 type Counts = {
   drivers: number
@@ -85,8 +87,11 @@ const sections: Section[] = [
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { modules } = useModules()
   const [counts, setCounts] = useState<Counts>({ drivers: 0, trucks: 0, bins: 0, customers: 0, users: 0, prices: 0 })
   const [loading, setLoading] = useState(true)
+
+  const visibleSections = sections.filter(s => isRouteEnabled(s.href, modules))
 
   useEffect(() => {
     async function load() {
@@ -119,7 +124,7 @@ export default function SettingsPage() {
   const summary: { label: string; value: number }[] = [
     { label: 'Drivers', value: counts.drivers },
     { label: 'Trucks', value: counts.trucks },
-    { label: 'Bins', value: counts.bins },
+    ...(modules.binServices ? [{ label: 'Bins', value: counts.bins }] : []),
     { label: 'Customers', value: counts.customers },
   ]
 
@@ -145,7 +150,7 @@ export default function SettingsPage() {
         {/* Management sections */}
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Manage</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          {sections.map(s => (
+          {visibleSections.map(s => (
             <Link
               key={s.href}
               href={s.href}

@@ -7,9 +7,9 @@ export const CLIENT_CONFIG = {
   shortName,
   tagline: process.env.NEXT_PUBLIC_CLIENT_TAGLINE || '',
   yardAddress: process.env.NEXT_PUBLIC_CLIENT_YARD_ADDRESS || '',
-  // Bin tracking per tenant: SimpliiTrash requires bin numbers on orders,
-  // BR Garden Center doesn't care — set NEXT_PUBLIC_CLIENT_REQUIRE_BIN=false there.
-  requireBin: process.env.NEXT_PUBLIC_CLIENT_REQUIRE_BIN !== 'false',
+  // Bin tracking is NOT here any more. It was NEXT_PUBLIC_CLIENT_REQUIRE_BIN,
+  // which made it a deploy-time setting; it is now the `binNumbers` toggle on
+  // /setup, stored per client in app_settings. Read it with useModules().
   // Sales tax on invoices. Ontario HST 13% by default; override per tenant/province.
   taxLabel: process.env.NEXT_PUBLIC_CLIENT_TAX_LABEL || 'HST',
   taxRate: Number(process.env.NEXT_PUBLIC_CLIENT_TAX_RATE ?? '13'),

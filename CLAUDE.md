@@ -72,7 +72,6 @@ never read `process.env` inside a component.**
 |---|---|---|
 | `NEXT_PUBLIC_CLIENT_NAME` | `SimpliiTrash` | Display name |
 | `NEXT_PUBLIC_CLIENT_SHORT_NAME` | `ST` | **Ticket prefix**, theme + cache keys |
-| `NEXT_PUBLIC_CLIENT_REQUIRE_BIN` | `true` | `'false'` → all bin requirements become optional (BR) |
 | `NEXT_PUBLIC_CLIENT_TAX_LABEL` | `HST` | Tax name on every document |
 | `NEXT_PUBLIC_CLIENT_TAX_RATE` | `13` | Percent, applied in JS |
 | `NEXT_PUBLIC_CLIENT_PRIMARY_COLOR` | `#0f766e` | The single UI accent |
@@ -86,8 +85,13 @@ never read `process.env` inside a component.**
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | — | Push; **unset ⇒ no service worker at all** |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | — | Address autocomplete |
 
-⚠ `.env.local.example` is **stale** — it omits `REQUIRE_BIN`, `TAX_LABEL`, `TAX_RATE`, `YARD_ADDRESS`,
+⚠ `.env.local.example` is **stale** — it omits `TAX_LABEL`, `TAX_RATE`, `YARD_ADDRESS`,
 `ICON_URL` and `GOOGLE_MAPS_API_KEY`. Use the table above as the source of truth.
+
+⚠ **`NEXT_PUBLIC_CLIENT_REQUIRE_BIN` was retired 2026-10-01.** Bin tracking is the `binNumbers`
+toggle on `/setup` now, stored per client in `app_settings`. Delete the variable from any Vercel
+deploy that still sets it — it does nothing. **A client that wants bin numbers off must save System
+Setup**, because the default is on; see "Database schema" for the one-time SQL.
 
 ⚠ `NEXT_PUBLIC_CLIENT_NAME` is **not set** in `.env.local` — SimpliiTrash is named purely by the
 `'SimpliiTrash'` default on line 1 of `lib/client-config.ts`. For a product that default should be
@@ -111,8 +115,9 @@ caches to `localStorage` so the sidebar renders without waiting on the network.
 - Dependencies live in `resolveModules()` and `enabledOrderTypes()` — never re-derive them at a call
   site. Disposal Sites off ⇒ EXCHANGE / REMOVAL / DUMP RETURN unavailable, because all three require
   a dump site.
-- Defaults are "everything on", with `binNumbers` inheriting `CLIENT_CONFIG.requireBin`, so an
-  un-migrated deployment behaves exactly as it did before this feature existed.
+- Defaults are **everything on**. A client with no saved row gets all modules, bin numbers included.
+  Onboarding is not finished until System Setup has been saved once — that is what makes a client's
+  shape explicit rather than inherited from a deploy.
 
 ---
 
@@ -197,7 +202,7 @@ Block checkout on a fractional countable line:
 - **Ticket numbers**: `generateTicketNumber()` only → `` `${CLIENT_CONFIG.shortName}-${7 digits}` ``
   (e.g. `ST-1234567`, `BR-1234567`). Never hardcode a prefix.
 - `EXCHANGE` / `REMOVAL` / `DUMP RETURN` require `dump_site_id` (**not** gated by tenant) and
-  `old_bin_id` (**gated by `CLIENT_CONFIG.requireBin`**).
+  `old_bin_id` (**gated by `modules.binNumbers` from `useModules()`**).
 - `DUMP RETURN` writes the same bin id to both `bin_id` and `old_bin_id`.
 - A bin already on an active order is rejected:
   `"This bin is still linked to active order <ticket>. Finish that order first."`
@@ -621,6 +626,33 @@ create policy "app_settings_update" on app_settings
 
 -- Deliberately no delete policy: the setup row is never removed.
 ```
+
+**Pin each existing client's setup — run BEFORE deploying the `requireBin` removal.**
+
+Until a client saves System Setup they fall back to all-modules-on, including bin numbers. BR
+Garden Center relied on `NEXT_PUBLIC_CLIENT_REQUIRE_BIN=false` for that, so without this row their
+exchanges and removals start failing with *"Exchange requires the current bin from this Job Site."*
+This writes today's behaviour into the database so removing the env var changes nothing.
+
+```sql
+-- BR Garden Center ONLY — bin numbers off, everything else on.
+insert into app_settings (id, modules)
+values (true, '{"binServices":true,"binNumbers":false,"disposalSites":true,
+                "materialDelivery":true,"retail":true,"accounting":true}'::jsonb)
+on conflict (id) do update set modules = excluded.modules, updated_at = now();
+```
+
+```sql
+-- SimpliiTrash ONLY — everything on, which is already the default. Optional,
+-- but makes the setup explicit rather than inherited.
+insert into app_settings (id, modules)
+values (true, '{"binServices":true,"binNumbers":true,"disposalSites":true,
+                "materialDelivery":true,"retail":true,"accounting":true}'::jsonb)
+on conflict (id) do update set modules = excluded.modules, updated_at = now();
+```
+
+Either client can then refine their own setup at `/setup` without a redeploy — which is the whole
+point of moving it out of env.
 
 Retail inventory (added 2026-07-29 — stock lives on `price_book` products; `adjust_stock` is a function so concurrent tills can't clobber each other's read-modify-write):
 

@@ -77,11 +77,17 @@ values ('<auth user id>', 'owner', 'Owner Name', 'owner@client.com');
 The column is `user_id`, not `auth_user_id`. Only `owner` and `manager` can reach
 System Setup.
 
-### 6. Hand over System Setup
+### 6. Save System Setup — not optional
 
 Sign in as the owner and open **Settings → System Setup**. Switch off whatever this
-client doesn't do. Nothing else about onboarding is client-specific — the tailoring
-happens here, not in code.
+client doesn't do, then **save even if you changed nothing**.
+
+A client with no saved row falls back to every module on, bin numbers included. Since
+`NEXT_PUBLIC_CLIENT_REQUIRE_BIN` was retired, that fallback is the only behaviour an
+unsaved client gets — so a garden centre that never saves will be asked for bin numbers
+it does not have. Saving is what makes the client's shape explicit.
+
+Nothing else about onboarding is client-specific. The tailoring happens here, not in code.
 
 ## Adding a migration
 

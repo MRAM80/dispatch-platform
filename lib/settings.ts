@@ -27,13 +27,16 @@ export type ModuleSettings = {
 }
 
 /**
- * Everything on, except bin numbers which inherits the deployment's current
- * behaviour. This matters: until a client saves their setup for the first
- * time, the app must behave exactly as it did before this feature existed.
+ * What a client gets before they have saved a setup: everything on.
+ *
+ * `binNumbers` used to inherit NEXT_PUBLIC_CLIENT_REQUIRE_BIN, which made bin
+ * tracking a deploy-time setting. That env var is gone — the toggle on /setup
+ * owns it now — so a client who wants bin numbers off must save that choice.
+ * Onboarding is not finished until System Setup has been saved once.
  */
 export const DEFAULT_MODULES: ModuleSettings = {
   binServices: true,
-  binNumbers: CLIENT_CONFIG.requireBin,
+  binNumbers: true,
   disposalSites: true,
   materialDelivery: true,
   retail: true,

@@ -63,6 +63,9 @@ export default function SetupPage() {
   const { modules, refresh } = useModules()
 
   const [draft, setDraft] = useState<ModuleSettings | null>(null)
+  // Whether the operator has started editing. Until they have, the form must
+  // keep following the live settings.
+  const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pageError, setPageError] = useState('')
   const [savedAt, setSavedAt] = useState('')
@@ -73,10 +76,15 @@ export default function SetupPage() {
     }
   }, [role, roleLoading, router])
 
-  // Seed the form from the live settings once they arrive.
+  // Follow the live settings until the operator edits something.
+  //
+  // This cannot be `cur ?? modules`: the provider starts on DEFAULT_MODULES and
+  // only then hydrates from cache and network, so latching the first value
+  // pinned the form to the defaults. A client who had saved "bin numbers off"
+  // would see every switch on, and saving would overwrite their real setup.
   useEffect(() => {
-    setDraft(cur => cur ?? modules)
-  }, [modules])
+    if (!touched) setDraft(modules)
+  }, [modules, touched])
 
   const current = draft ?? modules
   const dirty = JSON.stringify(current) !== JSON.stringify(modules)
@@ -84,6 +92,7 @@ export default function SetupPage() {
 
   function toggle(key: keyof ModuleSettings) {
     setSavedAt('')
+    setTouched(true)
     setDraft(resolveModules({ ...current, [key]: !current[key] }))
   }
 
@@ -117,6 +126,7 @@ export default function SetupPage() {
       return
     }
 
+    setTouched(false)
     await refresh()
     setSavedAt(new Date().toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' }))
   }

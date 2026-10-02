@@ -1808,142 +1808,6 @@ function OrdersPageContent() {
     }
   }
 
-  async function createLinkedWorkflowOrders(order: Order) {
-    const workflowStep = order.workflow_step || 'MAIN'
-    if (order.order_type === 'DELIVERY') return
-
-    if (
-      !order.dump_site_address &&
-      (order.order_type === 'REMOVAL' || order.order_type === 'EXCHANGE' || order.order_type === 'DUMP RETURN')
-    ) {
-      throw new Error('Dump site address is missing for this workflow.')
-    }
-
-    if (order.order_type === 'REMOVAL') {
-      if (workflowStep !== 'MAIN') return
-
-      const dumpOrder = {
-        ticket_number: generateTicketNumber(),
-        customer_id: order.customer_id,
-        customer_name: order.customer_name,
-        job_site_id: order.job_site_id || null,
-        pickup_address: order.service_address || order.pickup_address,
-        service_address: order.dump_site_address,
-        service_time: null,
-        service_window: null,
-        bin_id: order.old_bin_id,
-        old_bin_id: null,
-        dump_site_id: order.dump_site_id || null,
-        dump_site_address: order.dump_site_address || null,
-        parent_order_id: order.id,
-        workflow_step: 'DUMP',
-        bin_size: order.bin_size,
-        bin_type: order.bin_type,
-        order_type: 'REMOVAL',
-        driver_id: order.driver_id,
-        scheduled_date: order.scheduled_date,
-        status: 'assigned',
-        notes: `Auto-created dump stop for removal order ${order.ticket_number || order.id}`,
-      }
-
-      const { error } = await supabase.from(TABLE_NAME).insert([dumpOrder])
-      if (error) throw new Error(error.message)
-      return
-    }
-
-    if (order.order_type === 'EXCHANGE') {
-      if (workflowStep !== 'MAIN') return
-
-      const dumpOrder = {
-        ticket_number: generateTicketNumber(),
-        customer_id: order.customer_id,
-        customer_name: order.customer_name,
-        job_site_id: order.job_site_id || null,
-        pickup_address: order.service_address || order.pickup_address,
-        service_address: order.dump_site_address,
-        service_time: null,
-        service_window: null,
-        bin_id: order.old_bin_id,
-        old_bin_id: null,
-        dump_site_id: order.dump_site_id || null,
-        dump_site_address: order.dump_site_address || null,
-        parent_order_id: order.id,
-        workflow_step: 'DUMP',
-        bin_size: order.bin_size,
-        bin_type: order.bin_type,
-        order_type: 'EXCHANGE',
-        driver_id: order.driver_id,
-        scheduled_date: order.scheduled_date,
-        status: 'assigned',
-        notes: `Auto-created dump stop for exchange order ${order.ticket_number || order.id}`,
-      }
-
-      const { error } = await supabase.from(TABLE_NAME).insert([dumpOrder])
-      if (error) throw new Error(error.message)
-      return
-    }
-
-    if (order.order_type === 'DUMP RETURN') {
-      if (workflowStep === 'MAIN') {
-        const dumpOrder = {
-          ticket_number: generateTicketNumber(),
-          customer_id: order.customer_id,
-          customer_name: order.customer_name,
-          job_site_id: order.job_site_id || null,
-          pickup_address: order.service_address || order.pickup_address,
-          service_address: order.dump_site_address,
-          service_time: null,
-          service_window: null,
-          bin_id: order.bin_id,
-          old_bin_id: null,
-          dump_site_id: order.dump_site_id || null,
-          dump_site_address: order.dump_site_address || null,
-          parent_order_id: order.id,
-          workflow_step: 'DUMP',
-          bin_size: order.bin_size,
-          bin_type: order.bin_type,
-          order_type: 'DUMP RETURN',
-          driver_id: order.driver_id,
-          scheduled_date: order.scheduled_date,
-          status: 'assigned',
-          notes: `Auto-created dump stop for dump return order ${order.ticket_number || order.id}`,
-        }
-
-        const { error } = await supabase.from(TABLE_NAME).insert([dumpOrder])
-        if (error) throw new Error(error.message)
-        return
-      }
-
-      if (workflowStep === 'DUMP') {
-        const returnOrder = {
-          ticket_number: generateTicketNumber(),
-          customer_id: order.customer_id,
-          customer_name: order.customer_name,
-          job_site_id: order.job_site_id || null,
-          pickup_address: order.dump_site_address,
-          service_address: order.pickup_address || order.service_address,
-          service_time: null,
-          service_window: null,
-          bin_id: order.bin_id,
-          old_bin_id: null,
-          dump_site_id: order.dump_site_id || null,
-          dump_site_address: order.dump_site_address || null,
-          parent_order_id: order.parent_order_id || order.id,
-          workflow_step: 'RETURN',
-          bin_size: order.bin_size,
-          bin_type: order.bin_type,
-          order_type: 'DUMP RETURN',
-          driver_id: order.driver_id,
-          scheduled_date: order.scheduled_date,
-          status: 'assigned',
-          notes: `Auto-created return stop for dump return order ${order.ticket_number || order.id}`,
-        }
-
-        const { error } = await supabase.from(TABLE_NAME).insert([returnOrder])
-        if (error) throw new Error(error.message)
-      }
-    }
-  }
 
   async function handleQuickStatus(order: Order, value: string) {
     if (order.status === 'completed') {
@@ -1980,37 +1844,37 @@ function OrdersPageContent() {
       if (order.driver_id) await syncDriverStatuses(order.driver_id)
 
       if (value === 'completed' || value === 'issue' || value === 'cancelled') {
-        const workflowStep = order.workflow_step || 'MAIN'
-
         if (value === 'completed') {
-          if (workflowStep === 'MAIN') {
-            if (order.order_type === 'DELIVERY' && order.bin_id) {
-              await occupyBin(order.bin_id, order.service_address || order.pickup_address || null)
-            }
+          // One job is one order. A dispatcher marking it complete is an
+          // override meaning "this is finished", whatever step it had reached,
+          // so the bin lands wherever the job leaves it.
+          //
+          // This used to branch on workflow_step and INSERT a follow-up order
+          // for the dump and return legs, while the driver app advanced
+          // workflow_step on the same row. Both could run on one job, and
+          // which you got depended on who closed it. The driver's model won:
+          // the bin outcomes below mirror app/driver/page.tsx exactly, and the
+          // two must stay in step or a bin ends up in the wrong place.
+          const site = order.service_address || order.pickup_address || null
 
-            if (order.order_type === 'EXCHANGE') {
-              if (order.bin_id) {
-                await occupyBin(order.bin_id, order.service_address || order.pickup_address || null)
-              }
-              await createLinkedWorkflowOrders(order)
-            }
-
-            if (order.order_type === 'REMOVAL' || order.order_type === 'DUMP RETURN') {
-              await createLinkedWorkflowOrders(order)
-            }
+          if (order.order_type === 'DELIVERY' && order.bin_id) {
+            await occupyBin(order.bin_id, site)
           }
 
-          if (workflowStep === 'DUMP') {
-            if (order.order_type === 'DUMP RETURN' && order.bin_id) {
-              await occupyBin(order.bin_id, order.service_address || order.pickup_address || null)
-              await createLinkedWorkflowOrders(order)
-            } else if (order.bin_id) {
-              await releaseBin(order.bin_id)
-            }
+          if (order.order_type === 'EXCHANGE') {
+            // New bin stays on site, the one it replaced goes back to the yard.
+            if (order.bin_id) await occupyBin(order.bin_id, site)
+            if (order.old_bin_id) await releaseBin(order.old_bin_id)
           }
 
-          if (workflowStep === 'RETURN' && order.bin_id) {
-            await occupyBin(order.bin_id, order.service_address || order.pickup_address || null)
+          if (order.order_type === 'REMOVAL' && order.old_bin_id) {
+            await releaseBin(order.old_bin_id)
+          }
+
+          if (order.order_type === 'DUMP RETURN') {
+            // Emptied and brought back to the same site, so it stays in use.
+            const binId = order.old_bin_id || order.bin_id
+            if (binId) await occupyBin(binId, site)
           }
         }
 

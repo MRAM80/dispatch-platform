@@ -140,9 +140,20 @@ Order  (bin service: order_type + bin_size + bin_type)
 **The bin service is never an `order_items` row.** It stays as `order.order_type` + `order.bin_size`
 and is priced from `price_book` at billing time. Storing it as a line would double-bill.
 
-Multi-step jobs (EXCHANGE / REMOVAL / DUMP RETURN) advance **in place** via `workflow_step`, and the
-driver app is the implementation that does this correctly. See "Known defects" — the order page still
-contains a contradictory second implementation.
+Multi-step jobs (EXCHANGE / REMOVAL / DUMP RETURN) advance **in place** via `workflow_step`. The
+driver app owns that progression (`advanceWorkflowStep`: MAIN → DUMP → RETURN → completed). A
+dispatcher marking the job complete from the order page is an **override** — it finishes the whole
+job at whatever step it had reached, and applies the same final bin outcome the driver app would.
+
+**Those two bin outcomes must stay identical.** They live in `handleQuickStatus`
+(`app/order/page.tsx`) and the completion branch of `app/driver/page.tsx`:
+
+| Order type | Bin outcome on completion |
+|---|---|
+| `DELIVERY` | `bin_id` → in use at the site |
+| `EXCHANGE` | `bin_id` → in use at the site; `old_bin_id` → available at Yard |
+| `REMOVAL` | `old_bin_id` → available at Yard |
+| `DUMP RETURN` | the bin → in use back at the site |
 
 ---
 
@@ -366,9 +377,14 @@ the rest come from the audit pass and are worth re-checking before acting on the
    clears `orderLines` / `originalLines` / `lineSearch` / `prepaid`, and `openCreateModal`,
    `openEditModal` and `closeModal` all call it. `openCreateModal` also resets `newAddrDetails`, which
    leaked the same way. Any new modal-opening path must call it too.
-4. **Two contradictory two-step implementations coexist.** `createLinkedWorkflowOrders`
-   (`app/order/page.tsx`) *inserts child orders*; the driver app advances `workflow_step` on the same
-   row. Which one runs depends on who closes the job. The single-order model is the intended one.
+4. ~~**Two contradictory two-step implementations coexist.**~~ **Fixed 2026-10-02.**
+   `createLinkedWorkflowOrders` is deleted. It inserted child orders for the dump and return legs
+   while the driver app advanced `workflow_step` on the same row, so one job could get both and
+   which you got depended on who closed it. Verified before removing: **zero orders had
+   `parent_order_id` set**, so the child path had never actually run, while one order sat at
+   `workflow_step: 'DUMP'` — the driver's model was the live one. The order page now applies the
+   same final bin outcome as the driver app (table above). `parent_order_id` is still read by the
+   statement run's tier-1 lookup and is still preserved on edit; nothing writes a new one.
 
 **P1 — billing integrity**
 

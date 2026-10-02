@@ -94,6 +94,46 @@ export default function AppShell({
   const { modules } = useModules()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking')
+
+  // One gate for every admin page, because every admin page renders in here.
+  //
+  // Without it a signed-out visitor got the whole frame — sidebar, "Log out",
+  // headers — with empty data, because the per-page role guards no-op while
+  // the role is null. Nothing leaked (RLS blocks the anon key), but the app
+  // looked signed in when it was not.
+  //
+  // This cannot be middleware: the session lives in localStorage, not a
+  // cookie, so the server never sees it.
+  //
+  // getSession, not getUser: getUser calls the server, which means a visible
+  // "Loading…" on every page load and — worse — a redirect to the login screen
+  // for anyone on a flaky connection who is in fact signed in. getSession
+  // reads the stored session and still returns null once a refresh fails, so
+  // an expired login is still caught. This gate is for appearances; RLS is
+  // what actually protects the data.
+  useEffect(() => {
+    let cancelled = false
+    createClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (cancelled) return
+        if (data.session) {
+          setAuth('in')
+          return
+        }
+        setAuth('out')
+        // Embedded lives inside the dispatch iframe; the parent frame owns
+        // navigation, so redirecting from in here would strand the user.
+        if (!embedded) router.replace('/login')
+      })
+      .catch(() => {
+        if (!cancelled) setAuth('out')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [embedded, router])
 
   // Only the modules this client switched on. A hidden route is still
   // reachable by URL on purpose — switching a module off must never strand
@@ -172,9 +212,23 @@ export default function AppShell({
   )
 
   if (embedded) {
+    // No chrome and no redirect in here — just nothing until the session is known.
+    if (auth !== 'in') return null
     return (
       <div className="light text-slate-900" style={{ colorScheme: 'light', background: 'transparent' }}>
         {children}
+      </div>
+    )
+  }
+
+  // Deliberately not the shell: showing the sidebar and "Log out" to someone
+  // who is signed out is the thing this gate exists to stop.
+  if (auth !== 'in') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-400">
+          {auth === 'checking' ? 'Loading…' : 'Redirecting to sign in…'}
+        </p>
       </div>
     )
   }

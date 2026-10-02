@@ -282,12 +282,24 @@ if (!roleLoading && role !== null && !can(role, 'canViewReports')) {
 ⚠ The sidebar is **not** role-filtered and RLS is `to authenticated using (true)` on every table —
 the gate is cosmetic. Any signed-in user can read all data. Treat this as a known limitation.
 
-⚠ Weaker still: **most admin pages render for a signed-out visitor.** Verified 2026-08-01 with no
-session in storage at all — `/order`, `/reports` and `/reports/tax` drew the full shell (sidebar,
-"Log out", headers) and merely showed empty data, because the anon key can't satisfy the
-`to authenticated` policies. Only `app/reports/statements/page.tsx` actually checks
-(`supabase.auth.getUser()` → `router.push('/login')`); every other page relies on the role gate,
-which no-ops when `role` is null. No data leaks, but the app looks logged in when it isn't.
+**The signed-out gate lives in `AppShell`** (fixed 2026-10-02), so it covers all 21 admin pages at
+once. Without a session it renders a bare "Redirecting to sign in…" and replaces to `/login` — never
+the shell. Previously every page relied on the role guard, which no-ops while `role` is null, so a
+signed-out visitor got the sidebar and "Log out" with empty data: nothing leaked, but the app looked
+signed in when it wasn't.
+
+Two deliberate choices there:
+- **`getSession()`, not `getUser()`.** `getUser()` calls the server, which means a visible pause on
+  every page load and a bogus redirect to login for anyone signed in on a flaky connection.
+  `getSession()` reads the stored session and still returns null once a refresh fails, so an expired
+  login is still caught.
+- **Embedded renders nothing rather than redirecting.** The dispatch iframe's parent owns
+  navigation; redirecting from inside the frame would strand the user.
+
+This cannot be middleware: `lib/supabase/client.ts` uses `@supabase/supabase-js`, so the session is
+in `localStorage`, not a cookie, and the server never sees it. The gate is for appearances — **RLS is
+what actually protects the data.** The driver app does not use `AppShell` and is untouched, which
+matters because it must keep working offline.
 
 ### Service worker
 

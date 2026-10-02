@@ -45,6 +45,9 @@ const NAV: NavGroup[] = [
       { href: '/dump-sites', label: 'Disposal Sites', icon: 'location' },
       { href: '/users', label: 'Team', icon: 'team' },
       { href: '/import', label: 'Import Data', icon: 'arrowRight' },
+      // Owner/manager only, but the nav is not role-filtered, so a dispatcher
+      // sees it and gets bounced on click — same as every other gated page.
+      { href: '/setup', label: 'System Setup', icon: 'settings' },
     ],
   },
 ]

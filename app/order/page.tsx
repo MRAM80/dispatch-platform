@@ -769,7 +769,12 @@ function OrdersPageContent() {
    * The bin service is priced from the price book; material comes off the
    * order's own lines.
    */
-  async function createPrepaidInvoice(orderId: string, ticket: string | null, payload: Record<string, unknown>) {
+  /** Returns null on success, or a message describing what the operator must now fix by hand. */
+  async function createPrepaidInvoice(
+    orderId: string,
+    ticket: string | null,
+    payload: Record<string, unknown>
+  ): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser()
 
     const serviceType = String(payload.order_type || '')
@@ -794,7 +799,9 @@ function OrdersPageContent() {
         amount: Number((l.quantity * l.rate).toFixed(2)),
       })
     }
-    if (lines.length === 0) return
+    if (lines.length === 0) {
+      return 'Order saved, but no invoice was created: nothing on it has a price in the Price Book. The customer has paid — add the prices and invoice them by hand.'
+    }
 
     const subtotal = lines.reduce((sum, l) => sum + l.amount, 0)
     const taxAmount = subtotal * (CLIENT_CONFIG.taxRate / 100)
@@ -813,16 +820,34 @@ function OrdersPageContent() {
         notes: ticket ? `Paid at order — ${ticket}` : 'Paid at order',
         created_by: user?.id || null,
       }])
-      .select('id')
+      .select('id,invoice_number')
       .single()
 
-    if (error || !invoice) return
+    if (error || !invoice) {
+      return `Order saved and marked as paid, but the invoice could not be created: ${error?.message || 'unknown error'}. The customer has paid and has no invoice — raise one by hand.`
+    }
 
-    const inv = invoice as { id: string }
-    await supabase.from('invoice_items').insert(
-      lines.map(l => ({ invoice_id: inv.id, ...l }))
-    )
-    await supabase.from(TABLE_NAME).update({ invoice_id: inv.id }).eq('id', orderId)
+    const inv = invoice as { id: string; invoice_number: string | null }
+    const number = inv.invoice_number || 'the invoice'
+
+    const { error: itemsErr } = await supabase
+      .from('invoice_items')
+      .insert(lines.map(l => ({ invoice_id: inv.id, ...l })))
+
+    // The order must be stamped even if the items failed, because the stamp is
+    // what stops the monthly statement billing this work a second time.
+    const { error: linkErr } = await supabase
+      .from(TABLE_NAME)
+      .update({ invoice_id: inv.id })
+      .eq('id', orderId)
+
+    if (linkErr) {
+      return `${number} was created, but it could not be linked to this order: ${linkErr.message}. The account statement will bill this work AGAIN unless you link it or void one of them.`
+    }
+    if (itemsErr) {
+      return `${number} was created and its total is right, but the line items failed to save: ${itemsErr.message}. Check it before sending it to the customer.`
+    }
+    return null
   }
 
   async function refreshAll() {
@@ -1333,36 +1358,57 @@ function OrdersPageContent() {
    * cancelled order has to give it back. Guarded by an existing 'return'
    * movement so cancelling twice can't credit the stock twice.
    */
+  /**
+   * Give back whatever stock this order is still holding.
+   *
+   * Worked out from the movement ledger, not from the order's lines, because
+   * the ledger is the only record of what was actually taken. That makes it
+   * right in the two cases the line-based version got wrong:
+   *
+   *   - a product with track_stock off was never deducted, so it has no
+   *     movements and nothing is invented for it;
+   *   - a quantity edited downward already gave part of the hold back, and
+   *     only the remainder is owed.
+   *
+   * It is also idempotent by construction: once an order's movements net to
+   * zero it is holding nothing, so running twice credits nothing twice. That
+   * replaces the old "has any return movement" guard, which misfired on any
+   * order whose quantity had ever been reduced.
+   */
   async function releaseOrderStock(order: Order) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('price_book_id,description,quantity')
-      .eq('order_id', order.id)
-      .eq('kind', 'product')
-
-    const lines = (items as { price_book_id: string | null; description: string; quantity: number }[]) || []
-    if (lines.length === 0) return
-
-    const { data: alreadyReturned } = await supabase
+    const { data: moves, error: movesErr } = await supabase
       .from('stock_movements')
-      .select('id')
+      .select('price_book_id,quantity')
       .eq('order_id', order.id)
-      .eq('kind', 'return')
-      .limit(1)
-    if (alreadyReturned && alreadyReturned.length > 0) return
+
+    // Without the ledger we cannot tell what is owed, and crediting a guess
+    // would be worse than not crediting at all. Throw rather than report:
+    // both callers run inside a try whose catch shows the message AND skips
+    // the refresh that would otherwise wipe it off the screen.
+    if (movesErr) {
+      throw new Error(
+        `Could not read this order's stock movements: ${movesErr.message}. ` +
+          'The order was NOT cancelled — material is still held against it. Try again.'
+      )
+    }
+
+    const held = new Map<string, number>()
+    for (const m of (moves || []) as { price_book_id: string | null; quantity: number }[]) {
+      if (!m.price_book_id) continue
+      held.set(m.price_book_id, (held.get(m.price_book_id) || 0) + Number(m.quantity))
+    }
 
     const { data: { user } } = await supabase.auth.getUser()
-    for (const line of lines) {
-      if (!line.price_book_id) continue
-      const { error } = await supabase.rpc('adjust_stock', {
-        p_id: line.price_book_id,
-        p_delta: Number(line.quantity),
-      })
+    for (const [priceItemId, net] of held) {
+      // Negative net means that much is still out with this order.
+      if (net >= 0) continue
+      const giveBack = -net
+      const { error } = await supabase.rpc('adjust_stock', { p_id: priceItemId, p_delta: giveBack })
       if (error) continue
       await supabase.from('stock_movements').insert([{
-        price_book_id: line.price_book_id,
+        price_book_id: priceItemId,
         kind: 'return',
-        quantity: Number(line.quantity),
+        quantity: giveBack,
         note: `Cancelled ${order.ticket_number || 'order'}`,
         order_id: order.id,
         created_by: user?.id || null,
@@ -1686,7 +1732,14 @@ function OrdersPageContent() {
         await syncOrderLines(newOrder.id, newOrder.ticket_number)
       }
       if (prepaid) {
-        await createPrepaidInvoice(newOrder.id, newOrder.ticket_number, insertPayload)
+        const problem = await createPrepaidInvoice(newOrder.id, newOrder.ticket_number, insertPayload)
+        if (problem) {
+          // The order exists and the customer has paid. Keep the modal open so
+          // this cannot scroll past unnoticed -- money is involved.
+          setPageError(problem)
+          await loadOrders()
+          return
+        }
       }
 
       if (isEmbedded) {
